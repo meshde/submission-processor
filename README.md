@@ -13,6 +13,8 @@ Configuration for the notification server is at `config/default.js`.
 The following parameters can be set in config files or in env variables:
 
 - LOG_LEVEL: the log level
+- MAXFILESIZE: The maximum size of the file which can be submitted
+
 - KAFKA_URL: comma separated Kafka hosts
 - KAFKA_CLIENT_CERT: Kafka connection certificate, optional;
     if not provided, then SSL connection is not used, direct insecure connection is used;
@@ -22,17 +24,36 @@ The following parameters can be set in config files or in env variables:
     if provided, it can be either path to private key file or private key content
 - SUBMISSION_CREATE_TOPIC: Kafka topic related to Submission creation, default value is 'submission.notification.create'
 - AVSCAN_TOPIC: Kafka topic related to AV Scan, default value is 'avscan.action.scan'
-- ACCESS_KEY_ID: the AWS access key id
-- SECRET_ACCESS_KEY: the AWS secret access key
+
 - REGION: the AWS region
-- DMZ_BUCKET: the DMZ bucket
-- CLEAN_BUCKET: the clean bucket
-- QUARANTINE_BUCKET: quarantine bucket
+- DMZ_BUCKET: the DMZ bucket on s3
+- CLEAN_BUCKET: the clean bucket on s3
+- QUARANTINE_BUCKET: quarantine bucket on s3
+
 - SUBMISSION_API_URL: Submission API URL
 - ANTIVIRUS_API_URL: Antivirus API URL
 
-Note that ACCESS_KEY_ID and SECRET_ACCESS_KEY are optional,
-if not provided, then they are loaded from shared credentials, see [official documentation](https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/loading-node-credentials-shared.html)
+- AUTH0_URL: m2m Auth0 URL for Submission Service
+- AUTH0_AUDIENCE: m2m token audience
+- TOKEN_CACHE_TIME: m2m token cache valid time
+- AUTH0_CLIENT_ID: client id for m2m token
+- AUTH0_CLIENT_SECRET: client secret for m2m token
+- AUTH0_PROXY_SERVER_URL: proxy url for Auth0
+
+- dataDogEnabled: Enable/disable datadog tracing
+- lightStepEnabled: Enable/disable lightstep tracing
+- signalFXEnabled: Enable/disable signalfx tracing
+
+- datadog.service: Name of the service
+- datadog.hostname: Name of the host
+
+- lightStep.access_token: Your access token
+- lightStep.component_name: Your component name
+
+- signalFX.accessToken: Your access token
+- signalFX.url: URL of the SignalFX smart agent to send traces to
+
+AWS ACCESS_KEY_ID and SECRET_ACCESS_KEY are loaded from shared credentials, see [official documentation](https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/loading-node-credentials-shared.html)
 
 Also note that there is a `/health` endpoint that checks for the health of the app. This sets up an expressjs server and listens on the environment variable `PORT`. It's not part of the configuration file and needs to be passed as an environment variable
 
@@ -48,23 +69,29 @@ Also note that there is a `/health` endpoint that checks for the health of the a
 - use another terminal, go to same directory, start the Kafka server:
   `bin/kafka-server-start.sh config/server.properties`
 - note that the zookeeper server is at localhost:2181, and Kafka server is at localhost:9092
-- use another terminal, go to same directory, create a topic:
+- use another terminal, go to same directory, create topics if they don't exist:
   `bin/kafka-topics.sh --create --zookeeper localhost:2181 --replication-factor 1 --partitions 1 --topic submission.notification.create`
+  `bin/kafka-topics.sh --create --zookeeper localhost:2181 --replication-factor 1 --partitions 1 --topic avscan.action.scan`
 - verify that the topic is created:
   `bin/kafka-topics.sh --list --zookeeper localhost:2181`,
   it should list out the created topics
-- run the producer and then type a few messages into the console to send to the server:
+- run the producer and then type a few messages into the console create a submission:
   `bin/kafka-console-producer.sh --broker-list localhost:9092 --topic submission.notification.create`
-  in the console, write some messages, one per line:
+  in the console, write some messages, one per line (Note: change URL to your test zip file on a service like google drive):
 
 ```
-{ "topic":"submission.notification.create", "originator":"submission-api", "timestamp":"2018-08-06T15:46:05.575Z", "mime-type":"application/json", "payload":{ "resource":"submission", "id":"a12a4180-65aa-42ec-a945-5fd21dec0502", "url":"https://www.dropbox.com/s/31idvhiz9l7v35k/EICAR_submission.zip?dl=1", "fileType": "zip", "isFileSubmission":false } }
-
-{ "topic":"submission.notification.create", "originator":"submission-api", "timestamp":"2018-08-06T15:46:05.575Z", "mime-type":"application/json", "payload":{ "resource":"submission", "id":"a12a4180-65aa-42ec-a945-5fd21dec0503", "url":"https://drive.google.com/file/d/16kkvI-itLYaH8IuVDrLsRL94t-HK1w19/view?usp=sharing", "fileType": "zip", "isFileSubmission":false } }
-
+{ "topic":"submission.notification.create", "originator":"submission-api", "timestamp":"2018-08-06T15:46:05.575Z", "mime-type":"application/json", "payload":{ "resource":"submission", "id":"a12a4180-65aa-42ec-a945-5fd21dec0502", "url":"https://drive.google.com/open?id=1ahqDdz3XiOK0-TueLqPSPb8kiZZF1peb", "fileType": "zip", "isFileSubmission":false } }
 ```
 
-  we can keep this producer so that we may send more messages later for verification
+- run the producer and then type a few messages into another console to scan the submission:
+  `bin/kafka-console-producer.sh --broker-list localhost:9092 --topic avscan.action.scan`
+  in the console, write some messages, one per line (Note: change URL to your s3 bucket url and filename to your file):
+
+```
+{ "topic":"avscan.action.scan", "originator":"submission-api", "timestamp":"2018-08-06T15:46:05.575Z", "mime-type":"application/json", "payload":{"submissionId":"a12a4180-65aa-42ec-a945-5fd21dec0502", "isInfected": false, "fileName": "a12a4180-65aa-42ec-a945-5fd21dec0502.zip", "status": "scanned", "url": "https://dmztopcoder.s3.us-east-2.amazonaws.com/a12a4180-65aa-42ec-a945-5fd21dec0502.zip"} }
+```
+
+  We can keep these producers so that we may send more messages later for verification
 - optionally, use another terminal, go to same directory, start a consumer to view the messages:
   `bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic submission.notification.create --from-beginning`
 
@@ -145,17 +172,24 @@ npm run cov-e2e
 
 ## Verification
 
-- start kafka server, start mock submission api, setup 3 AWS S3 buckets and update corresponding config, start processor app, start Anti virus service or configure Remote Anti virus service
+- start kafka server, start mock submission api, setup 3 AWS S3 buckets, setup tracers and update corresponding config, start processor app, start Anti virus service or configure Remote Anti virus service
 
 - Note: `submission-scanner` app need to be up and running as well to verify the working of `submission-processor`
 
-- use the above kafka-console-producer to write messages to `submission.notification.create` topic, one message per line:
+- run the producer and then type a few messages into the console create a submission:
+  `bin/kafka-console-producer.sh --broker-list localhost:9092 --topic submission.notification.create`
+  in the console, write some messages, one per line (Note: change URL to your test zip file on a service like google drive):
 
 ```
-{ "topic":"submission.notification.create", "originator":"submission-api", "timestamp":"2018-08-06T15:46:05.575Z", "mime-type":"application/json", "payload":{ "resource":"submission", "id":"a12a4180-65aa-42ec-a945-5fd21dec0502", "url":"https://www.dropbox.com/s/31idvhiz9l7v35k/EICAR_submission.zip?dl=1", "fileType": "zip", "isFileSubmission":false } }
+{ "topic":"submission.notification.create", "originator":"submission-api", "timestamp":"2018-08-06T15:46:05.575Z", "mime-type":"application/json", "payload":{ "resource":"submission", "id":"a12a4180-65aa-42ec-a945-5fd21dec0502", "url":"https://drive.google.com/open?id=1ahqDdz3XiOK0-TueLqPSPb8kiZZF1peb", "fileType": "zip", "isFileSubmission":false } }
+```
 
-{ "topic":"submission.notification.create", "originator":"submission-api", "timestamp":"2018-08-06T15:46:05.575Z", "mime-type":"application/json", "payload":{ "resource":"submission", "id":"a12a4180-65aa-42ec-a945-5fd21dec0503", "url":"https://drive.google.com/file/d/16kkvI-itLYaH8IuVDrLsRL94t-HK1w19/view?usp=sharing", "fileType": "zip", "isFileSubmission":false } }
+- run the producer and then type a few messages into another console to scan the submission:
+  `bin/kafka-console-producer.sh --broker-list localhost:9092 --topic avscan.action.scan`
+  in the console, write some messages, one per line (Note: change URL to your s3 bucket url and filename to your file):
 
+```
+{ "topic":"avscan.action.scan", "originator":"submission-api", "timestamp":"2018-08-06T15:46:05.575Z", "mime-type":"application/json", "payload":{"submissionId":"a12a4180-65aa-42ec-a945-5fd21dec0502", "isInfected": false, "fileName": "a12a4180-65aa-42ec-a945-5fd21dec0502.zip", "status": "scanned", "url": "https://dmztopcoder.s3.us-east-2.amazonaws.com/a12a4180-65aa-42ec-a945-5fd21dec0502.zip"} }
 ```
 
   similarly add more messages, the files will be moved to clean or quarantine areas depending on the result from Anti virus API

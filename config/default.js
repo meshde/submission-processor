@@ -21,12 +21,32 @@ module.exports = {
   },
 
   SUBMISSION_API_URL: process.env.SUBMISSION_API_URL || 'http://localhost:3010/api/v5',
-  ANTIVIRUS_API_URL: process.env.ANTIVIRUS_API_URL || 'http://localhost:3010/v5/batchScan',
+  ANTIVIRUS_API_URL: process.env.ANTIVIRUS_API_URL || 'http://localhost:3011/v5/batchScan',
 
   AUTH0_URL: process.env.AUTH0_URL, // Auth0 credentials for Submission Service
   AUTH0_AUDIENCE: process.env.AUTH0_AUDIENCE || 'https://www.topcoder.com',
   TOKEN_CACHE_TIME: process.env.TOKEN_CACHE_TIME,
   AUTH0_CLIENT_ID: process.env.AUTH0_CLIENT_ID,
   AUTH0_CLIENT_SECRET: process.env.AUTH0_CLIENT_SECRET,
-  AUTH0_PROXY_SERVER_URL: process.env.AUTH0_PROXY_SERVER_URL
+  AUTH0_PROXY_SERVER_URL: process.env.AUTH0_PROXY_SERVER_URL,
+  tracing: {
+    dataDogEnabled: process.env.DATADOG_ENABLED || false,
+    lightStepEnabled: process.env.LIGHTSTEP_ENABLED || false,
+    signalFXEnabled: process.env.SIGNALFX_ENABLED || false,
+
+    dataDog: {
+      service: process.env.DATADOG_SERVICE_NAME || 'submission-processor',
+      hostname: process.env.DD_TRACE_AGENT_HOSTNAME
+    },
+
+    lightStep: {
+      access_token: process.env.LIGHTSTEP_ACCESS_TOKEN || '',
+      component_name: process.env.LIGHTSTEP_COMPONENT_NAME || ''
+    },
+
+    signalFX: {
+      accessToken: process.env.SIGNALFX_ACCESS_TOKEN || '',
+      url: `https://${process.env.SIGNALFX_TRACE_AGENT_HOSTNAME}:9080/v1/trace` || ''
+    }
+  }
 }
